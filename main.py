@@ -651,7 +651,7 @@ def about():
 
 
 def oink():
-	app.run(debug=True)
+	app.run(debug=True, threaded=True, port=5000)
 
 	
 
