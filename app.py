@@ -649,9 +649,8 @@ def about():
 
 
 
-'''
 
-def main():
+def oink():
 	app.run(debug=True)
 
 	
@@ -665,6 +664,5 @@ if __name__ == '__main__':
 	#addtopic("English monarchy accessions")
 	
 	
-	main()
+	oink()
 	
-'''
