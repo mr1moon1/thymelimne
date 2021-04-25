@@ -646,9 +646,17 @@ def quicktopic(topicname, wikiurl, datecolumnname, tableindex=0):
 @app.route('/about')
 def about():
 	return render_template('about.html')
+
+
+
+
+
+def main():
+	app.run(debug=True)
+
 	
 
-			
+	
 	
 db.create_all()
 if __name__ == '__main__':
@@ -657,4 +665,4 @@ if __name__ == '__main__':
 	#addtopic("English monarchy accessions")
 	
 	
-	app.run(debug=True)
+	main()
