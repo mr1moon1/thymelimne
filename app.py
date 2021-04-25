@@ -34,8 +34,8 @@ from anystring2date import anystring2date
 
 app = Flask(__name__)
 Bootstrap(app)
-file_path = os.path.abspath(os.getcwd())+"\database.db"
-app.config['SQLALCHEMY_DATABASE_URI'] = 'Heroku_Database_URL'
+file_path = os.path.abspath(os.getcwd(),"database.db")
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///'+file_path
 app.config['SECRET_KEY'] = 'meow'
 db = SQLAlchemy(app)
 login_manager = LoginManager()
