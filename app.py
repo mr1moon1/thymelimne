@@ -6,15 +6,14 @@ Things I'm still not sure how to do:
 2. Change the color of a link as your mouse hovers over it
 3. Use jinja to change the CSS :root variables
 '''
-
 import numpy as np
 import pandas as pd
-from flask import Flask, render_template, redirect, url_for, request
+from flask import Flask, render_template, redirect, url_for, request, flash, abort
 from flask_bootstrap import Bootstrap
 from flask_wtf import FlaskForm
-from wtforms import StringField, PasswordField, BooleanField, DateField, SelectField#Boolean field is checkbox
+from wtforms import StringField, PasswordField, BooleanField, DateField, SelectField, SubmitField#Boolean field is checkbox
 from wtforms.ext.sqlalchemy.fields import QuerySelectField
-from wtforms.validators import InputRequired, Email, Length
+from wtforms.validators import InputRequired, Email, Length, DataRequired, EqualTo, ValidationError
 import email_validator
 from flask_sqlalchemy import SQLAlchemy
 import os
@@ -31,16 +30,32 @@ from colorthief import ColorThief
 from magic_background import magic_background
 from wiki2artifacts import wiki2artifacts #autopopulate db
 from anystring2date import anystring2date
+from itsdangerous import TimedJSONWebSignatureSerializer as Serializer #email reset
+from flask_mail import Mail, Message
+from flask_bcrypt import Bcrypt
+
+import operator
+from sqlalchemy.sql import select, text
 
 app = Flask(__name__)
+app.config.from_object(__name__) # Because of:  https://stackoverflow.com/questions/17404854/connection-refused-when-sending-mail-with-flask-mail
 Bootstrap(app)
-file_path = os.path.abspath(os.getcwd(),"database.db")
+file_path = os.path.abspath(os.getcwd())+"/database.db"
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///'+file_path
 app.config['SECRET_KEY'] = 'meow'
 db = SQLAlchemy(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
+
+app.config['MAIL_SERVER'] = 'smtp.googlemail.com'
+app.config['MAIL_PORT'] = 587
+app.config['MAIL_USE_TLS'] = True
+app.config['MAIL_USERNAME'] = 'thymelimne@gmail.com'#os.environ.get('EMAIL_USER')
+app.config['MAIL_PASSWORD'] = 'timelinepassword'#os.environ.get('EMAIL_PASS')
+mail = Mail(app)
+
+bcrypt = Bcrypt(app)
 
 #===============================================================
 # User authentication, eh :|
@@ -50,6 +65,23 @@ class User(UserMixin, db.Model):
 	username = db.Column(db.String(), unique=True)
 	email = db.Column(db.String(50), unique=True)
 	password = db.Column(db.String(80))
+	#------------------------------------------
+	def get_reset_token(self, expires_sec=1800):
+		s = Serializer(app.config['SECRET_KEY'], expires_sec)
+		return s.dumps({'user_id': self.id}).decode('utf-8')
+
+	@staticmethod
+	def verify_reset_token(token):
+		s = Serializer(app.config['SECRET_KEY'])
+		try:
+			user_id = s.loads(token)['user_id']
+		except:
+			return None
+		return User.query.get(user_id)
+
+	def __repr__(self):
+		return f"User('{self.username}', '{self.email}')"
+	#-------------------------------------------
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -59,13 +91,12 @@ class LoginForm(FlaskForm):
 	#Three fields.
 	username = StringField('username', validators=[InputRequired(), Length(min=4, max=15)])
 	password = PasswordField('password', validators=[InputRequired(), Length(min=8, max=80)])
-	remember = BooleanField('remember me')
 	
 class RegisterForm(FlaskForm):
 	#username, email, and password fields.
 	email = StringField('email', validators=[InputRequired(), Email(message='Invalid email'), Length(max=50)])
 	username = StringField('username', validators = [InputRequired(), Length(min=4, max=15)])
-	password = PasswordField('password', validators = [InputRequired(), Length(min=4, max=15)])
+	password = PasswordField('password', validators = [InputRequired(), Length(min=8, max=80)])
 
 #@app.route('/')
 def index():
@@ -86,12 +117,12 @@ def login():
 			print(form.password.data)
 			if check_password_hash(user.password, form.password.data):
 				print("correct password")
-				login_user(user, remember=form.remember.data)
+				login_user(user)#, remember=form.remember.data)
 				#return redirect(url_for('dashboard'))
 				return redirect(url_for('create'))
 			else:
 				print("Password is incorrect")
-		return '<h1>INVALID USERNAME OR PASSWORD:'+form.username.data+' '+form.password.data+'</h1>'
+		return render_template('login_error.html')
 	return render_template('login.html', form=form)
 
 @app.route('/signup', methods=['GET', 'POST'])
@@ -100,9 +131,12 @@ def signup():
 	if form.validate_on_submit():
 		hashed_password = generate_password_hash(form.password.data, method='sha256')
 		new_user = User(username=form.username.data, email=form.email.data, password=hashed_password)
-		db.session.add(new_user)
-		db.session.commit() #Add vs. commit -- idk lol, but u gotta do it
-		return '<h1>A new user has been created!</h1>'
+		try:
+			db.session.add(new_user)
+			db.session.commit() #Add vs. commit -- idk lol, but u gotta do it
+		except:
+			return render_template('signup_error.html')
+		return render_template('created.html', typeofthing="account")
 	return render_template('signup.html', form=form)
 
 @app.route('/dashboard')
@@ -114,8 +148,8 @@ def dashboard():
 @login_required
 def logout():
 	logout_user()
-	return redirect(url_for('index'))
-	
+	return redirect(url_for('create'))
+
 
 @app.route('/create')
 def create():
@@ -124,6 +158,92 @@ def create():
 	except:
 		name=""
 	return render_template("create.html", name=name)
+	
+#-------------------------------------------------------------------
+# admin-specific priveledges:
+
+# Users:
+@app.route('/allusers')
+@app.route('/all_users')
+@app.route('/allusersadmin')
+@app.route('/all_users_admin')
+@login_required
+def all_users():
+	if current_user.username=="admin":
+		users = User.query.all()
+		return render_template('all_users.html', users=users)
+	else:
+		return redirect(url_for('create'))
+
+@app.route('/deleteuser/<userid>')
+@app.route('/delete_user/<userid>')
+@login_required
+def delete_user(userid):
+	if current_user.username=="admin":
+		u = User.query.filter(User.id==userid).first()
+		db.session.delete(u)
+		db.session.commit()
+		return redirect(url_for('all_users'))
+	else:
+		return redirect(url_for('create'))
+	
+	
+	
+	
+# Topics:
+@app.route('/alltopicsadmin')
+@app.route('/all_topics_admin')
+@login_required
+def all_topics_admin():
+	if current_user.username=="admin":
+		topics = Topic.query.all()
+		return render_template('all_topics_admin.html', topics=topics)
+	else:
+		return redirect(url_for('create'))
+
+@app.route('/deletetopic/<topicid>')
+@app.route('/delete_topic/<topicid>')
+@login_required
+def delete_topic(topicid):
+	if current_user.username=="admin":
+		t = Topic.query.filter(Topic.tid==topicid).first()
+		db.session.delete(t)
+		db.session.commit()
+		return redirect(url_for('all_topics_admin'))
+	else:
+		return redirect(url_for('create'))
+		
+		
+		
+		
+		
+		
+# Artifacts:
+@app.route('/allartifactsadmin')
+@app.route('/all_artifacts_admin')
+@login_required
+def all_artifacts_admin():
+	if current_user.username=="admin":
+		artifacts = Artifact.query.all()
+		return render_template('all_artifacts_admin.html', artifacts=artifacts)
+	else:
+		return redirect(url_for('create'))
+
+@app.route('/deleteartifact/<artifactid>')
+@app.route('/delete_artifact/<artifactid>')
+@login_required
+def delete_artifact(artifactid):
+	if current_user.username=="admin":
+		a = Artifact.query.filter(Artifact.aid==artifactid).first()
+		db.session.delete(a)
+		db.session.commit()
+		return redirect(url_for('all_artifacts_admin'))
+	else:
+		return redirect(url_for('create'))
+		
+		
+		
+		
 	
 #==============================================================
 # The classes defining the actual interesting meat of the project:
@@ -196,7 +316,10 @@ def colorbychance(ct, p, b, t):
 	return ti, bi, di
 	
 def autostyle(topic_name, topic_index):
-	img, imgurl = magic_background.magic_background(topic_name)
+	# Proud of the magic_background module, but will have to circumbent it for now:
+	'''img, imgurl = magic_background.magic_background(topic_name)'''
+	
+	img=None; imgurl="static/starrysky.jpg"
 	ct, p, b, t = color_knowledge(img, imgurl)
 	print(p)
 	
@@ -255,7 +378,7 @@ class CreateTopicForm(FlaskForm):
 class CreateArtifactForm(FlaskForm):
 	title = StringField('title', validators=[InputRequired(), Length(min=1, max=100)])
 	description = StringField('description')
-	date = DateField('date', format='%m/%d/%Y')
+	date = DateField('date (MM/DD/YYYY)', format='%m/%d/%Y')
 	url = StringField('url')
 	atopic = SelectField('atopic', choices=db.session.query(Topic.title).all())
 	
@@ -271,7 +394,7 @@ def create_topic():
 	if form.validate_on_submit():
 		
 		#Check to make sure that it doesn't already exist:
-		if not Topic.query.filter(title==form.title.data).count():
+		if not Topic.query.filter(Topic.title==form.title.data).count():
 			new_topic = Topic(title=form.title.data)
 			db.session.add(new_topic)
 			db.session.commit()
@@ -279,7 +402,7 @@ def create_topic():
 			# Create the style:
 			autostyle(new_topic.title, new_topic.tid)
 		
-		return '<h1>A new topic has been created!</h1>'
+		return render_template('created.html', typeofthing="topic")
 	return render_template('create_topic.html', form=form)
 	
 #HTML USED: create_artifact.html
@@ -304,23 +427,9 @@ def create_artifacts():
 		new_artifact = Artifact(title=form.title.data, description=form.description.data, date=form.date.data, url=form.url.data, atopic=form.atopic.data) #atopic=Topic(tid=int(form.atopic.data)))
 		db.session.add(new_artifact)
 		db.session.commit()
-		return '<h1>A new artifact has been created!</h1>'
+		return render_template('created.html', typeofthing="artifact")
 	return render_template('create_artifact.html', form=form)
-	
-	
-#=============================================================
-# Other types of artifacts:
 
-class YouTubeArtifact(Artifact): #inherits Artifact class
-	pass
-	
-class ImageArtifact(Artifact): #inherits Artifact class
-	pass
-
-class WikiArtifact(Artifact): #inherits Artifact class
-	pass
-
-	
 #=============================================================
 # ???:
 
@@ -357,14 +466,36 @@ def find_relative_lengths(items, overall_depth, start_depth):
 	
 	lengths = {}
 	depths = {}
+	
+	# To help measure the distance between things:
+	previous_absolute_depth = -100
+	
+	# To tell you when the years is:
+	years = {}
+	
 	for item in items:
 		time_since_start = item.date - start_date
 		relative_length = time_since_start / overall_length
 		relative_length_dict = {item.aid : relative_length}
-		absolute_depth_dict = {item.aid : relative_length*overall_depth+start_depth}
+		absolute_depth=relative_length*overall_depth+start_depth
+		absolute_depth_dict = {item.aid : absolute_depth}
 		lengths.update(relative_length_dict)
 		depths.update(absolute_depth_dict)
-	return lengths, depths
+		
+		if not item.aid in years:
+			if not item.date.year in years.values():
+				years[item.aid] = item.date.year
+			else:
+				years[item.aid] = " "
+		
+		# To fix the scaling issue (More patchy than it is optimal, as a solution, but hopefully works):
+		depth_difference = absolute_depth - previous_absolute_depth
+		if depth_difference < 2.5 and not depth_difference<=0:
+			print(depth_difference)
+			return find_relative_lengths(items, 2*overall_depth, start_depth)
+		previous_absolute_depth = absolute_depth
+	print(years)
+	return lengths, depths, overall_depth, years
 	
 #Find the absolute pixel depths for each item. 
 def find_absolute_depths(artifacts, start_depth, overall_depth, relative_depths):
@@ -375,42 +506,7 @@ def find_absolute_depths(artifacts, start_depth, overall_depth, relative_depths)
 		absolute_depths.append(localdict)
 	return absolute_depths
 	
-#=====================================================
-# Ticks: (ABANDONED feature, at least for the time being...)
 
-def create_ticks(artifacts, overall_depth=1, start_depth=0):
-	#By default, this just returns ratios (because the denominator, overall_depth, is 1.)
-	
-	month_ticks = [] #A tick for the first day of every month
-	first_artifact = min(artifacts, key=attrgetter('date'))
-	last_artifact = max(artifacts, key=attrgetter('date'))
-
-	i = 0
-	current_date = first_artifact.date
-	while current_date < last_artifact.date:
-		if current_date.day==1: #The first day of the month
-			current_ratio = (current_date - first_artifact.date) / (last_artifact.date - first_artifact.date)
-			
-			current_pixel_depth = current_ratio * overall_depth + start_depth
-		
-			month_ticks.append([i, str(str(calendar.month_name[current_date.month])+" "+str(current_date.year)),current_ratio, current_pixel_depth])
-			
-			i += 1
-			
-		current_date += timedelta(days=1)
-		
-	'''
-	Each list should contain items that each contain the following contents:
-	{ 
-		tick[0]	 unique number for ease of naming the auto-generated CSS style components,
-		
-		tick[1]	 human-readable label that is a formal name of the time,
-		
-		tick[2]	 the depth that the tick should go down in the page (expressed in absolute amount of pixels for that specific page) ~~> Could maybe change to express as ratios, to help with future modularity of this code, but it's probably worth just leaving as is, at least for now.
-	}
-	x2
-	'''
-	return month_ticks
 	
 #=====================================================
 # The front-facing pages:
@@ -448,7 +544,7 @@ def timeline():
 	overall_depth=1000
 	start_depth = 0
 	
-	artifacts = Artifact.query.join(Topic).filter(Topic.tid==topic_name).all()
+	artifacts = Artifact.query.join(Topic).filter(Topic.tid==topic_name).order_by(Artifact.date)
 	topic = Topic.query.filter(Topic.tid==topic_name).first()
 	if not str(topic_name).isnumeric():
 		artifacts = Artifact.query.join(Topic).filter(Topic.title==topic_name).all()
@@ -462,7 +558,7 @@ def timeline():
 		return render_template('one_topic.html', topic=topic, artifact=artifact)
 	
 	# And the following is what is intended to happen from this function:
-	relative_depths, absolute_depths = find_relative_lengths(artifacts, overall_depth, start_depth)
+	relative_depths, absolute_depths, overall_depth, years = find_relative_lengths(artifacts, overall_depth, start_depth)
 	
 	month_ticks = None
 	week_ticks = None
@@ -472,7 +568,16 @@ def timeline():
 		for tick in month_ticks:
 			print(tick[2])
 	
-	return render_template('timeline.html', artifacts=artifacts, relative_depths=relative_depths, overall_depth=overall_depth, start_depth=start_depth, absolute_depths=absolute_depths, topic=topic, ticks=ticks, month_ticks=month_ticks, num_artifacts=len(artifacts), tackycolor=tackycolor, panelcolor=brightcolor, textcolor=darkcolor, imgurl=imgurl, style=style)
+	return render_template('timeline.html', artifacts=artifacts, relative_depths=relative_depths, overall_depth=overall_depth, start_depth=start_depth, absolute_depths=absolute_depths, topic=topic, ticks=ticks, month_ticks=month_ticks, num_artifacts=len(artifacts), tackycolor=tackycolor, panelcolor=brightcolor, textcolor=darkcolor, imgurl=imgurl, style=style, years=years)
+	
+	
+def getvideocode(youtubeurl):
+	videocode = youtubeurl
+	videocode = videocode.partition('?v=')[2]
+	videocode = videocode.partition('?')[0]
+	print("getvideocode()")
+	print(videocode)
+	return videocode
 	
 @app.route('/artifact')
 def artifact():
@@ -494,27 +599,21 @@ def artifact():
 	# Artifact might be None, so I'll try to make sure it's not that.
 	if artifact:
 		topic = Topic.query.get(artifact.atopic)
+		if "youtube" in artifact.url:
+			return render_template('artifact.html', artifact=artifact, topic=topic, videocode=getvideocode(artifact.url))
 		return render_template('artifact.html', artifact=artifact, topic=topic)
 		
 	# If artifact was None:
 	return '<h1>Oops... looks like there was probably no artifact to present.</h1>'
 	
-# Get links for each timeline.
-def timeline_links(topics):
-	links = []
-	for topic in topics:
-		link = None
-		links.append(link)
-	return links
-	
+
 @app.route('/')
 @app.route('/home')
 @app.route('/topics')
 @app.route('/timelines')
 def timelines():
 	topics = Topic.query.all()
-	links = timeline_links(topics)
-	return render_template('topics.html', topics=topics, links=links)
+	return render_template('topics.html', topics=topics)
 	
 #===============================================================
 # I was too lazy to manually create example artifacts, so I made a module to scrape tables on Wikipedia, to make each timeline more quickly.
@@ -634,8 +733,6 @@ def quicktopic(topicname, wikiurl, datecolumnname, tableindex=0):
 	topic=None
 	if not Topic.query.filter(Topic.title==topicname).count():
 		topic = addtopic(topicname)
-		print(topic)
-		print("PPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPP")
 		autostyle(topic_name=topicname, topic_index=topic)
 	else:
 		print("Looks like the thing is already there, in the Topic table.")
@@ -649,20 +746,65 @@ def about():
 
 
 
-
-def oink():
-	app.run(debug=True)
-
+@app.route('/remove_duplicate_artifacts')
+def remove_duplicate_artifacts():
+	new_artifacts=[]
+	artifacts = Artifact.query.all()
+	artifacts.sort(key=lambda a: a.date)
+	previous_artifact = Artifact(title=None, date=None)
+	print(previous_artifact)
+	for artifact in artifacts:
+		current_artifact=artifact
+		repeat_title = (current_artifact.title==previous_artifact.title)
+		repeat_date = (current_artifact.date==previous_artifact.date)
+		if (not repeat_date) or (not repeat_title):
+			new_artifacts.append(current_artifact)
+			print(str(current_artifact.title)+"\t"+str(current_artifact.date)+"\t"+str(current_artifact.aid))
+		previous_artifact = current_artifact
 	
+	for a in Artifact.query.all():
+		if a not in new_artifacts:
+			db.session.delete(a)
+			db.session.commit()
+	
+	return redirect(url_for('timelines'))
+	
+	
+	
+class EditArtifactForm(FlaskForm):
+	artifactDescription = StringField('description')
+	artifactUrl = StringField('url')
 
-	
-	
+# https://stackoverflow.com/questions/35892144/pre-populate-an-edit-form-with-wtforms-and-flask
+@app.route('/editartifact/<artifactId>', methods = ['GET','POST'])
+def editartifact_page(artifactId):
+	print("editartifact_page()")
+	try:
+		form = EditArtifactForm()		
+		if request.method=="POST" and form.validate():
+			artifactDescription = form.artifactDescription.data
+			artifactUrl = form.artifactUrl.data
+			print(artifactDescription)
+			print(artifactUrl)
+			
+			artifact = Artifact.query.filter(Artifact.aid==artifactId).first()
+			print(artifact)
+			
+			artifact.description = artifactDescription
+			artifact.url = artifactUrl
+			db.session.commit()
+			return redirect(url_for('timelines'))
+		return render_template("editartifact2.html", form=form, ARTIFACT_ID=artifactId)
+
+	except Exception as e:
+		return(str(e))
+
 db.create_all()
+from resetemail import *
 if __name__ == '__main__':
 	
 	# Should make functions after this line, to bulk-scrape wiki pages to populate the Artifacts table.
 	#addtopic("English monarchy accessions")
 	
-	
-	oink()
+	app.run(debug=True)
 	
