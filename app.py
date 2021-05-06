@@ -40,7 +40,7 @@ from sqlalchemy.sql import select, text
 app = Flask(__name__)
 app.config.from_object(__name__) # Because of:  https://stackoverflow.com/questions/17404854/connection-refused-when-sending-mail-with-flask-mail
 Bootstrap(app)
-file_path = os.path.abspath(os.getcwd())+"/database.db"
+file_path = os.path.join(os.path.abspath(os.getcwd()),"database.db")
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///'+file_path
 app.config['SECRET_KEY'] = 'meow'
 db = SQLAlchemy(app)
