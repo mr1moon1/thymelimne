@@ -1,10 +1,10 @@
 '''
-Got help from this YouTube tutorial, for user authentication: l:https://github.com/PrettyPrinted/building_user_login_system
+Initially followed this YouTube tutorial, for user authentication: l:https://github.com/PrettyPrinted/building_user_login_system
 
 Things I'm still not sure how to do:
 1. Minimize FOUC so it doesn't flash white on each new page (if that's still happening)
-2. Change the color of a link as your mouse hovers over it
-3. Use jinja to change the CSS :root variables
+2. Change the color of a link as your mouse hovers over it (Though now, don't want that anyway.)
+3. Use jinja to change the CSS :root variables (CSS mods currently work, but currently aren't as neat as they could be.)
 '''
 import numpy as np
 import pandas as pd
