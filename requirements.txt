@@ -16,3 +16,5 @@ matplotlib
 scipy
 bs4
 gunicorn
+flask_mail
+flask_bcrypt
