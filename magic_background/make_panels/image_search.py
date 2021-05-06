@@ -1,3 +1,4 @@
+'''
 import glob
 from simple_image_download import simple_image_download
 
@@ -22,3 +23,10 @@ def image_search(phrase, limit=50):
 	except:
 		print("Unable to do simple_image_download.")
 	return response().download(phrase,limit)
+'''
+import glob
+
+def directory_exists(topic_name):
+	return None
+def image_search(topic_name):
+	return None

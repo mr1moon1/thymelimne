@@ -3,15 +3,8 @@
 	--horizontal-whitespace: 20px;
 	--crimson: #AA000A;
 	--brown: #a0893b;
-	--rope-gray: #a39e8a;
-	--rope: #9f8a68;
-	--eggshell: #F0EAD6;
-	--cadet-blue: #5F9EA0;
-	--steel-blue: #4682B4;
-	--dark-green: #006400;
-	--dark-slate-gray: #2F4F4F;
-	--navy-blue: #000080;
-	--midnight-blue: #191970;
+	--rope-gray: #a39e8a; /* changed */
+	--midnight-blue: #000000; /* was #191970 */
 }
 
 @font-face

@@ -22,7 +22,7 @@
 		
 		#verticalline{
 			background: {{tackycolor}};
-			height: 1000px;
+			height: {{overall_depth}}px;
 			width: 10px;
 			position: absolute;
 			margin-left: 15%;
@@ -35,6 +35,14 @@
 				margin-left: 28%;
 				margin-top: {{ absolute_depths[artifact.aid]-4 }}px;
 				position: absolute;
+			}
+			
+			a{{artifact.aid}}year {
+				color: {{tackycolor}};
+				margin-left: 11.11%;
+				margin-top: {{absolute_depths[artifact.aid]+1}}px;
+				position: absolute;
+				font-size: 8px;
 			}
 			
 			#rectangle{{artifact.aid}} {
@@ -105,6 +113,7 @@
 			</a>
 			<div id="rectangle{{artifact.aid}}"></div>
 			<div id="arrowhead{{artifact.aid}}"></div>
+			<a{{artifact.aid}}year><em>{{years[artifact.aid]}}</em></a{{artifact.aid}}year>
 		{% endfor %}
 		
 		
