@@ -772,9 +772,5 @@ def editartifact_page(artifactId):
 db.create_all()
 from resetemail import *
 if __name__ == '__main__':
-	
-	# Should make functions after this line, to bulk-scrape wiki pages to populate the Artifacts table.
-	#addtopic("English monarchy accessions")
-	
-	app.run(debug=True)
+	app.run(debug=True, host='0.0.0.0')
 	
