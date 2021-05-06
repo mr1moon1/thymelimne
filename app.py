@@ -27,8 +27,8 @@ from datetime import timedelta
 from operator import attrgetter
 from webcolors import rgb_to_hex #autostyle
 from colorthief import ColorThief
-from magic_background import magic_background
-from wiki2artifacts import wiki2artifacts #autopopulate db
+#from magic_background import magic_background
+#from wiki2artifacts import wiki2artifacts #autopopulate db
 from anystring2date import anystring2date
 from itsdangerous import TimedJSONWebSignatureSerializer as Serializer #email reset
 from flask_mail import Mail, Message
@@ -41,7 +41,7 @@ app = Flask(__name__)
 app.config.from_object(__name__) # Because of:  https://stackoverflow.com/questions/17404854/connection-refused-when-sending-mail-with-flask-mail
 Bootstrap(app)
 file_path = os.path.join(os.path.abspath(os.getcwd()),"database.db")
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///'+file_path
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite://'+file_path
 app.config['SECRET_KEY'] = 'meow'
 db = SQLAlchemy(app)
 login_manager = LoginManager()
@@ -697,27 +697,6 @@ def convertdatetime(string): #string
 		return datetime.date(year,month,day)
 	return None
 
-	
-def scrape_wiki(wikiurl, datecolumnname, tableindex=0, topic=1):
-	df = wiki2artifacts(url=wikiurl, tableindex=tableindex, topicid=topic, datecolumnname=datecolumnname) #returns a df
-	#df.to_sql(topic, index=False, if_exists='append', con=db.session)
-	for index, row in df.iterrows():
-		title=row['title']
-		date=row['date']
-		#date=datetime.strptime(date, '%m/%d/%Y')
-		#date = convertdatetime(date)
-		date=anystring2date(date)
-		if date==None:
-			continue
-			# ^ No date represented (probably just a header row)
-		
-		description=row['description']
-		url=row['url']
-		atopic=row['atopic']
-		
-		artifact = Artifact(title=title, date=date, description=description, url=url, atopic=atopic)
-		db.session.add(artifact)
-		db.session.commit()
 
 		
 def addtopic(title):
@@ -729,16 +708,7 @@ def addtopic(title):
 	return tid
 	
 	
-def quicktopic(topicname, wikiurl, datecolumnname, tableindex=0):
-	topic=None
-	if not Topic.query.filter(Topic.title==topicname).count():
-		topic = addtopic(topicname)
-		autostyle(topic_name=topicname, topic_index=topic)
-	else:
-		print("Looks like the thing is already there, in the Topic table.")
-		topic = Topic.query.filter(Topic.title==topicname).first().tid
-	scrape_wiki(wikiurl=wikiurl, tableindex=tableindex, topic=topic, datecolumnname=datecolumnname)
-			# ^ Remember that topic goes into this function as the id number.
+
 			
 @app.route('/about')
 def about():
