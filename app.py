@@ -772,5 +772,6 @@ def editartifact_page(artifactId):
 db.create_all()
 from resetemail import *
 if __name__ == '__main__':
+	print("app.py is running.")
 	app.run(debug=True, host='0.0.0.0')
 	
