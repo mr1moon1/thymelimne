@@ -58,7 +58,7 @@ mail = Mail(app)
 bcrypt = Bcrypt(app)
 
 #===============================================================
-# User authentication, eh :|
+# User authentication
 
 class User(UserMixin, db.Model):
 	id = db.Column(db.Integer, primary_key=True)
