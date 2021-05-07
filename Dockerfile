@@ -1,11 +1,12 @@
-# https://www.youtube.com/watch?v=wrMJoKpK2mk
-# init a base image (Alpine is small Linux distro)
-FROM python:3.8.1-slim
-# define the present working directory
-WORKDIR /thymelimne
-# copy the contents into the working dir
-ADD . /thymelimne
-# run pip to install the dependencies of the flask app
+# https://dev.to/erenaspire7/deploying-a-dockerized-flask-app-to-heroku-5h7j
+
+FROM python:3.8.1
+
+ENV APP_HOME /app
+WORKDIR $APP_HOME
+
+COPY . /app
+
 RUN pip install -r requirements.txt
-# define the command to start the container
-CMD ["python","app.py"]
+
+ENTRYPOINT ["python app.py"]
